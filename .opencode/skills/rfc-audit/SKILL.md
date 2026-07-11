@@ -26,18 +26,26 @@ Goal: split the RFC into 2-level sections, summarize each, archive full text sep
 
 ### A.1 Split into sections
 
-1. **Primary — numbered sections:** match lines matching the regex `^(\d+(\.\d+)*)\s+(.+)`. The atomic unit is **2-level** sections (e.g. `2.1`, `2.2`, `3.2`). Content deeper than 2-level (e.g. `2.1.1`) rolls up into its 2-level parent (`2.1`). A top-level section with no subsections (e.g. `2`) stays as its own unit.
-2. **Fallback — Markdown headings:** if the document has NO numbered sections, split by Markdown heading level. Use `##` (h2) as the atomic unit.
-3. **Last resort:** if neither numbered sections nor headings exist, treat the entire document as a single section.
+Run the helper script to clean and split the RFC document deterministically (no LLM):
+
+```bash
+python .opencode/skills/rfc-audit/scripts/split_rfc.py <rfc_input> RFC/{protocol}/ --rfc-id <RFC_ID>
+```
+
+The script handles all splitting logic:
+1. **Primary — numbered sections:** matches `^(\d+(\.\d+)*)\s+(.+)`. Atomic unit = **2-level** (e.g. `2.1`). Deeper sections (`2.1.1`) roll up into their 2-level parent (`2.1`). Top-level sections with no subsections (`2`) stay as their own unit.
+2. **Fallback — Markdown headings:** if the document has NO numbered sections, splits by `##` (h2) as the atomic unit.
+3. **Last resort:** whole document as a single section.
+
+The script writes section files to `RFC/{protocol}/sections/` and a JSON index skeleton to `RFC/{protocol}/rfc_sections.json` (with `title` and `content_path` filled in, `summary` left empty).
 
 ### A.2 Summarize each section
 
-For each section unit, write a one-paragraph summary describing the behavior and constraints it specifies. This summary drives matching in Phase B.
+For each section in the index, write a one-paragraph summary describing the behavior and constraints it specifies, and fill it into the `summary` field of `rfc_sections.json`. This summary drives matching in Phase B.
 
 ### A.3 Archive
 
-- Write each section's full text to `RFC/{protocol}/sections/{RFC_ID}_{section}.md`.
-- Write the index to `RFC/{protocol}/rfc_sections.json`. The JSON stores ONLY `title`, `summary`, and `content_path` — full text lives in the separate `.md` files.
+The split script (A.1) already writes the archive. The JSON stores ONLY `title`, `summary`, and `content_path` — full text lives in the separate `.md` files. After A.2 fills in summaries, the index is complete.
 
 Index schema:
 ```json
