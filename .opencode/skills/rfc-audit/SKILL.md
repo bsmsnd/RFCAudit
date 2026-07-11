@@ -80,7 +80,7 @@ Partition the directory list into `k` shards (default `k = 5`) by **directory co
 - Shard `i` takes directories `dirs[i*N/k .. (i+1)*N/k)`.
 - Shard boundaries align to consecutive subtrees so directories from the same subtree stay in the same shard (shared context).
 
-Dispatch `k` subagents in parallel via the `task` tool — issue one message with `k` `task` calls. Each subagent, for each assigned directory, does:
+Dispatch `k` subagents in parallel via the `task` tool — issue one message with `k` `task` calls (using `subagent_type: "general"`). Each subagent receives its directory list plus the RFC section summaries from `rfc_sections.json`. For each assigned directory, the subagent does:
 1. Read key header/source files; use `codegraph_explore` to sample the directory's symbols.
 2. Write a directory summary — what does this directory implement?
 3. Compare the directory summary against ALL RFC section summaries from Phase A.
@@ -154,11 +154,15 @@ Return candidate inconsistencies as a list, each with: the RFC section it violat
 
 ### C.5 Critic subagent instructions
 
-Dispatch the `rfc-critic` subagent (defined in `.opencode/agent/rfc-critic.md`). It reviews one analysis result at a time and returns only the inconsistencies that survive review. See the critic agent definition for its full rules.
+Dispatch the `rfc-critic` subagent (defined in `.opencode/agents/rfc-critic.md`). It reviews one analysis result at a time and returns only the inconsistencies that survive review. See the critic agent definition for its full rules.
 
 ### C.6 Output
 
 Write confirmed inconsistencies to `inconsistencies_{protocol}.json`:
+
+The main agent assembles the final output: each surviving inconsistency from a critic review is wrapped with its RFC section ID, the original context (the analyzed source code), and the additional context (codegraph-explored caller evidence), grouped by RFC section.
+
+"RFC chunk ID" identifies the RFC section being checked — format: RFC number + section (e.g., `RFC 5722 §4`).
 
 ```json
 [
