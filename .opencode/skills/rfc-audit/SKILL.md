@@ -50,3 +50,63 @@ Index schema:
   }
 }
 ```
+
+## Phase B — Code Mapping
+
+Goal: split the codebase into directory units, summarize each, and match to RFC sections. This produces both a reusable code summary AND the scope for Phase C.
+
+### B.1 Source file identification
+
+Source extensions by language:
+- C/C++: `.c .h .cpp .hpp .cc .cxx .hh`
+- Java: `.java`
+- Python: `.py`
+- Rust: `.rs`
+
+EXCLUDE non-source files: `CMakeLists.txt`, `*.cmake`, `Makefile`, `*.mk`, `*.sh`, `*.json`, `*.yaml`, `*.xml`, `*.toml`, `*.md`, `*.conf`, and build artifacts.
+
+EXCLUDE non-engineering directories: any directory whose name matches `test*`, `benchmark*`, `.opencode`, or `doc*`.
+
+### B.2 Directory splitting (deterministic prescan, no LLM)
+
+1. Root directory = level 1. The default atomic unit is a **level 3** directory.
+2. For each directory, count source files using the extensions above.
+3. If a directory has more than 100 source files, split deeper to level 4. If a level-4 directory still has more than 100, split to level 5 (the maximum depth).
+4. Produce the complete ordered list of directories to summarize. This is pure file counting — no LLM calls.
+
+### B.3 k-way parallel summarization + matching
+
+Partition the directory list into `k` shards (default `k = 5`) by **directory count**, not file count — the cost driver is the number of directories to summarize:
+- Shard `i` takes directories `dirs[i*N/k .. (i+1)*N/k)`.
+- Shard boundaries align to consecutive subtrees so directories from the same subtree stay in the same shard (shared context).
+
+Dispatch `k` subagents in parallel via the `task` tool — issue one message with `k` `task` calls. Each subagent, for each assigned directory, does:
+1. Read key header/source files; use `codegraph_explore` to sample the directory's symbols.
+2. Write a directory summary — what does this directory implement?
+3. Compare the directory summary against ALL RFC section summaries from Phase A.
+4. Assign a confidence per (directory × RFC section):
+   - **high** — the directory clearly implements the behavior described in that RFC section.
+   - **medium** — the directory contains supporting code for that behavior (shared data structures, call-path dependencies).
+   - **low** — only a tangential reference.
+   - **none** — unrelated.
+
+### B.4 Merge and write code_map
+
+Merge all shard results into `summary/{protocol}_code_map.json`:
+- Record `high` and `medium` associations in `related_sections`.
+- Record `low` associations in `candidates` (available for Phase C to optionally expand, but not audited by default).
+- Omit `none`.
+
+Schema:
+```json
+{ "src/net/ipv6/": {
+    "summary": "IPv6 protocol stack core: packet I/O, extension headers, address autoconfiguration",
+    "file_count": 57,
+    "level": 3,
+    "related_sections": [
+      { "rfc": "RFC 2460", "section": "3", "confidence": "high" }
+    ],
+    "candidates": []
+  }
+}
+```
