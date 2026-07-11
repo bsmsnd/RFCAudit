@@ -173,7 +173,7 @@ Write confirmed inconsistencies to `inconsistencies_{protocol}.json`:
 ]
 ```
 
-Note: there is no `proposed_fix` field. This skill identifies problems only.
+Note: no fix-suggestion field is emitted. This skill identifies problems only.
 
 ## File Layout Summary
 
