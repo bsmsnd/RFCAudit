@@ -110,3 +110,76 @@ Schema:
   }
 }
 ```
+
+## Phase C — Audit
+
+Goal: for each directory with high/medium RFC associations, find explicit inconsistencies between the code and the specification. **Problem identification only — do NOT propose fixes.**
+
+### C.1 Work unit
+
+The work unit is **one directory** carrying ALL its high/medium associated RFC sections. The directory is explored once; every associated section is checked against it. This avoids redundant codegraph exploration of the same directory for different sections.
+
+If a directory is very large (many associated sections), it MAY be split so each section gets its own analysis task — but the default is per-directory aggregation.
+
+### C.2 Scope confinement
+
+codegraph exploration during audit is **bounded by the directory** from code_map:
+- Only query symbols that live WITHIN that directory.
+- If a call path leads outside the directory (e.g. a caller in another directory), take only that single call site as context evidence. Do NOT expand into a full audit of the out-of-scope directory.
+- Cross-directory relevance must come from Phase B matching. The audit does not self-expand scope.
+
+### C.3 Batch-synchronous parallel processing
+
+1. Collect all directories with `high` or `medium` associations from code_map. Call the count `N`.
+2. Process in batches of `batch_size` (default 5).
+
+For each batch:
+- **Round 1 — analyze:** dispatch `batch_size` analysis subagents IN PARALLEL (one message, multiple `task` calls using `subagent_type: "general"`). Each subagent receives the directory path plus its associated RFC section contents (loaded via `content_path`). Wait for ALL subagents in the batch to return.
+- **Round 2 — critic:** dispatch `batch_size` critic subagents IN PARALLEL (one message, multiple `task` calls using `subagent_type: "rfc-critic"`). Each critic receives one analysis result plus the original RFC section text and the relevant code. Wait for ALL to return.
+- Merge the confirmed inconsistencies into the output JSON, then proceed to the next batch.
+
+Analysis and critic are two separate rounds because each critic needs its corresponding analysis result — they cannot overlap in the same round.
+
+### C.4 Analysis subagent instructions
+
+Pass these instructions to each analysis subagent along with the directory path and associated RFC section contents:
+
+1. **Understand the spec.** Extract mandatory behaviors, constraints, and requirements from the associated sections. Consider only explicitly stated behavior — do NOT infer or assume anything undocumented.
+2. **Explore code within scope.** Use `codegraph_explore` to retrieve relevant function, macro, and type definitions WITHIN the directory boundary. Retrieve caller context as supporting evidence. Maximize coverage within the directory before concluding.
+3. **Compare rigorously.** Report ONLY explicit violations of mandatory behavior. Account for call-site guarantees — if a precondition is satisfied before a call, the callee need not recheck it.
+
+Do NOT report: optional or undefined behavior, valid or intended implementation choices, logging vs silent handling differences. **This phase identifies problems only — do NOT propose fixes.**
+
+Return candidate inconsistencies as a list, each with: the RFC section it violates, the relevant code location, and a one-sentence summary of the violation.
+
+### C.5 Critic subagent instructions
+
+Dispatch the `rfc-critic` subagent (defined in `.opencode/agent/rfc-critic.md`). It reviews one analysis result at a time and returns only the inconsistencies that survive review. See the critic agent definition for its full rules.
+
+### C.6 Output
+
+Write confirmed inconsistencies to `inconsistencies_{protocol}.json`:
+
+```json
+[
+  {
+    "RFC chunk ID": "RFC 5722 §4 (description of the section)",
+    "original context": "<relevant function source code>",
+    "additional context": "<codegraph-explored caller context>",
+    "inconsistencies": [
+      { "summary": "RFC requires X, but the implementation does not check X" }
+    ]
+  }
+]
+```
+
+Note: there is no `proposed_fix` field. This skill identifies problems only.
+
+## File Layout Summary
+
+```
+RFC/{protocol}/sections/{RFC_ID}_{section}.md   # Phase A: section full text
+RFC/{protocol}/rfc_sections.json                 # Phase A: title + summary + content_path
+summary/{protocol}_code_map.json                 # Phase B: directory → summary + RFC associations
+inconsistencies_{protocol}.json                  # Phase C: confirmed inconsistencies
+```
